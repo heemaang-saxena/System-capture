@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "bindings": "^1.5.0",
+    "nan": "^2.23.0"
+  },
+  "devDependencies": {
+    "electron-rebuild": "^3.2.9"
+  },
+  "scripts": {
+    "rebuild": "node rebuild.js"
+  }
+}
