@@ -1,34 +1,3 @@
-// const { startLoopbackCapture, stopLoopbackCapture, writeWav } = require('./index');
-
-// let recordedSamples = [];
-// let channels = 0;
-// let sampleRate = 0;
-
-// console.log("🎙 Starting system loopback capture for 10 seconds...");
-
-// startLoopbackCapture((samples, ch, sr) => {
-//   channels = ch;
-//   sampleRate = sr;
-//   // Push all chunks into one big array
-//   recordedSamples.push(...samples);
-// }, -1); // -1 = default device
-
-// setTimeout(() => {
-//   console.log("🛑 Stopping capture...");
-//   stopLoopbackCapture();
-
-//   if (recordedSamples.length === 0) {
-//     console.error("❌ No audio was captured. Check if system is playing audio.");
-//     process.exit(1);
-//   }
-
-//   const all = Int16Array.from(recordedSamples);
-//   const filename = "test.wav";
-//   writeWav(filename, all, channels, sampleRate);
-//   console.log(`✅ Saved system audio to ${filename} (${(all.length / channels / sampleRate).toFixed(1)} sec)`);
-//   process.exit(0);
-// }, 10000);
-
 // const { 
 //   startLoopbackCapture, 
 //   stopLoopbackCapture, 
@@ -46,7 +15,8 @@
 // console.log("👉 Please SPEAK into your microphone now...");
 
 // startMicCapture((samples, ch, sr) => {
-//   micCh = ch; micRate = sr;
+//   micCh = ch;
+//   micRate = sr;
 //   micSamples.push(...samples);
 // }, -1);
 
@@ -67,7 +37,8 @@
 //   console.log("👉 Please PLAY some audio on your system (YouTube, music, etc.)...");
 
 //   startLoopbackCapture((samples, ch, sr) => {
-//     loopCh = ch; loopRate = sr;
+//     loopCh = ch;
+//     loopRate = sr;
 //     loopSamples.push(...samples);
 //   }, -1);
 
@@ -92,6 +63,7 @@
 
 // }, 15000);
 
+
 const { 
   startLoopbackCapture, 
   stopLoopbackCapture, 
@@ -100,59 +72,73 @@ const {
   writeWav 
 } = require('./index');
 
-let micSamples = [];
-let loopSamples = [];
-let micCh = 0, micRate = 0;
-let loopCh = 0, loopRate = 0;
+let allSamples = [];
+let globalCh = 0, globalRate = 0;
 
-console.log("🎙 Starting MIC (Agent) capture for 15s...");
-console.log("👉 Please SPEAK into your microphone now...");
-
-startMicCapture((samples, ch, sr) => {
-  micCh = ch;
-  micRate = sr;
-  micSamples.push(...samples);
-}, -1);
-
-setTimeout(() => {
-  console.log("🛑 Stopping mic...");
-  stopMicCapture();
-
-  if (micSamples.length > 0) {
-    const allMic = Int16Array.from(micSamples);
-    writeWav("agent.wav", allMic, micCh, micRate);
-    console.log(`✅ Saved mic audio -> agent.wav (${(allMic.length / micCh / micRate).toFixed(1)} sec)`);
-  } else {
-    console.error("❌ No mic audio captured.");
+function appendSamples(samples, ch, sr) {
+  if (!globalRate) {
+    globalCh = ch;
+    globalRate = sr;
   }
+  // If mismatch, resampling would be needed (not handled here for simplicity)
+  allSamples.push(...samples);
+}
 
-  // === Next: system loopback
-  console.log("\n🎧 Starting SYSTEM (Customer) capture for 15s...");
-  console.log("👉 Please PLAY some audio on your system (YouTube, music, etc.)...");
+function runTest() {
+  console.log("🎙 Step 1: MIC (Agent) capture for 10s...");
 
-  startLoopbackCapture((samples, ch, sr) => {
-    loopCh = ch;
-    loopRate = sr;
-    loopSamples.push(...samples);
+  startMicCapture((samples, ch, sr) => {
+    appendSamples(samples, ch, sr);
   }, -1);
 
   setTimeout(() => {
-    console.log("🛑 Stopping system audio...");
-    stopLoopbackCapture();
+    stopMicCapture();
+    console.log("🛑 Mic stopped");
 
-    if (loopSamples.length > 0) {
-      const allLoop = Int16Array.from(loopSamples);
-      writeWav("customer.wav", allLoop, loopCh, loopRate);
-      console.log(`✅ Saved system audio -> customer.wav (${(allLoop.length / loopCh / loopRate).toFixed(1)} sec)`);
-    } else {
-      console.error("❌ No system audio captured.");
-    }
+    console.log("🎧 Step 2: LOOPBACK (Customer) capture for 10s...");
+    startLoopbackCapture((samples, ch, sr) => {
+      appendSamples(samples, ch, sr);
+    }, -1);
 
-    console.log("\n🎯 Test finished (Mic then System). You should now have:");
-    console.log("   - agent.wav (your mic recording)");
-    console.log("   - customer.wav (your system playback recording)");
+    setTimeout(() => {
+      stopLoopbackCapture();
+      console.log("🛑 Loopback stopped");
 
-    process.exit(0);
-  }, 15000);
+      console.log("🎙 Step 3: MIC (Agent again) capture for 10s...");
+      startMicCapture((samples, ch, sr) => {
+        appendSamples(samples, ch, sr);
+      }, -1);
 
-}, 15000);
+      setTimeout(() => {
+        stopMicCapture();
+        console.log("🛑 Mic stopped (again)");
+
+        console.log("🎧 Step 4: LOOPBACK (Customer again) capture for 10s...");
+        startLoopbackCapture((samples, ch, sr) => {
+          appendSamples(samples, ch, sr);
+        }, -1);
+
+        setTimeout(() => {
+          stopLoopbackCapture();
+          console.log("🛑 Loopback stopped (again)");
+
+          // === Final WAV ===
+          if (allSamples.length > 0) {
+            const finalAudio = Int16Array.from(allSamples);
+            writeWav("conversation.wav", finalAudio, globalCh, globalRate);
+            console.log(`✅ Saved merged audio -> conversation.wav`);
+          } else {
+            console.error("❌ No audio captured.");
+          }
+          process.exit(0);
+
+        }, 10000);
+
+      }, 10000);
+
+    }, 10000);
+
+  }, 10000);
+}
+
+runTest();
