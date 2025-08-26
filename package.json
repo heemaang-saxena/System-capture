@@ -1,12 +1,23 @@
 {
+  "name": "system-capture",
+  "version": "1.0.0",
+  "description": "System audio capture native addon",
+  "main": "index.js",
   "dependencies": {
     "bindings": "^1.5.0",
-    "nan": "^2.23.0"
+    "node-addon-api": "^7.0.0"
   },
   "devDependencies": {
-    "electron-rebuild": "^3.2.9"
+    "node-gyp": "^10.0.1"
   },
   "scripts": {
-    "rebuild": "node rebuild.js"
+    "install": "node-gyp rebuild",
+    "rebuild": "node-gyp rebuild",
+    "clean": "node-gyp clean",
+    "configure": "node-gyp configure",
+    "build": "node-gyp build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

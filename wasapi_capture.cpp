@@ -1,6 +1,6 @@
 #define _WIN32_DCOM
 #define NOMINMAX
-#include <nan.h>
+#include <napi.h>
 #include <windows.h>
 #include <mmdeviceapi.h>
 #include <audioclient.h>
@@ -12,7 +12,7 @@
 #include <vector>
 #include <iostream>
 
-using namespace Nan;
+using namespace Napi;
 
 struct AudioData {
     std::vector<int16_t> samples;
@@ -23,11 +23,9 @@ struct AudioData {
 struct CaptureContext {
     std::queue<AudioData> audioQueue;
     std::mutex queueMutex;
-    uv_async_t asyncHandle;
-    Nan::Callback* jsCallback = nullptr;
+    Napi::ThreadSafeFunction tsfn;
     std::thread captureThread;
     std::atomic<bool> capturing{false};
-    bool asyncInit = false;
     bool loopback = false;
 };
 
@@ -43,93 +41,67 @@ inline int16_t Int32ToInt16(int32_t s) { return (int16_t)(s >> 16); }
 
 void DoCapture(CaptureContext* ctx, int deviceIndex);
 
-void AsyncCb(uv_async_t* handle) {
-    CaptureContext* ctx = reinterpret_cast<CaptureContext*>(handle->data);
-    if (!ctx) return;
-
-    Nan::HandleScope scope;
-    Nan::AsyncResource asyncResource("wasapi_capture:callback");
-
-    std::queue<AudioData> localQ;
-    {
-        std::lock_guard<std::mutex> lock(ctx->queueMutex);
-        std::swap(localQ, ctx->audioQueue);
+void CallbackWrapper(Napi::Env env, Napi::Function jsCallback, AudioData* data) {
+    if (jsCallback != nullptr) {
+        Napi::Buffer<int16_t> buffer = Napi::Buffer<int16_t>::Copy(env, data->samples.data(), data->samples.size());
+        jsCallback.Call({buffer, Napi::Number::New(env, data->channels), Napi::Number::New(env, data->sampleRate)});
     }
-
-    while (!localQ.empty()) {
-        AudioData data = std::move(localQ.front());
-        localQ.pop();
-
-        v8::Local<v8::Value> argv[3];
-        argv[0] = Nan::CopyBuffer(
-            reinterpret_cast<char*>(data.samples.data()),
-            data.samples.size() * sizeof(int16_t)
-        ).ToLocalChecked();
-        argv[1] = Nan::New(data.channels);
-        argv[2] = Nan::New(data.sampleRate);
-
-        if (ctx->jsCallback) {
-            ctx->jsCallback->Call(3, argv, &asyncResource);
-        }
-    }
+    delete data;
 }
 
-void StartCapture(CaptureContext* ctx, const Nan::FunctionCallbackInfo<v8::Value>& info, bool loopback) {
+void StartCapture(CaptureContext* ctx, const Napi::CallbackInfo& info, bool loopback) {
+    Napi::Env env = info.Env();
+    
     if (ctx->capturing) return;
 
-    if (!info[0]->IsFunction()) {
-        Nan::ThrowTypeError("First arg must be callback");
+    if (!info[0].IsFunction()) {
+        Napi::TypeError::New(env, "First arg must be callback").ThrowAsJavaScriptException();
         return;
     }
 
-    ctx->jsCallback = new Nan::Callback(info[0].As<v8::Function>());
     int deviceIndex = -1;
-    if (info.Length() > 1 && info[1]->IsNumber()) {
-        deviceIndex = Nan::To<int>(info[1]).FromJust();
+    if (info.Length() > 1 && info[1].IsNumber()) {
+        deviceIndex = info[1].As<Napi::Number>().Int32Value();
     }
 
     ctx->capturing = true;
     ctx->loopback = loopback;
 
-    uv_async_init(uv_default_loop(), &ctx->asyncHandle, AsyncCb);
-    ctx->asyncHandle.data = ctx;
-    ctx->asyncInit = true;
+    // Create thread-safe function
+    ctx->tsfn = Napi::ThreadSafeFunction::New(
+        env,
+        info[0].As<Napi::Function>(),
+        "AudioCapture",
+        0,
+        1
+    );
 
     ctx->captureThread = std::thread(DoCapture, ctx, deviceIndex);
-}
-
-void OnUvClose(uv_handle_t* handle) {
-    CaptureContext* ctx = reinterpret_cast<CaptureContext*>(handle->data);
-    if (ctx) ctx->asyncInit = false;
-    std::cout << "✔ Handle closed safely" << std::endl;
 }
 
 void StopCapture(CaptureContext* ctx) {
     ctx->capturing = false;
     if (ctx->captureThread.joinable()) ctx->captureThread.join();
 
-    if (ctx->asyncInit) {
-        uv_close((uv_handle_t*)&ctx->asyncHandle, OnUvClose);
-        ctx->asyncInit = false;
-    }
-
-    if (ctx->jsCallback) {
-        delete ctx->jsCallback;
-        ctx->jsCallback = nullptr;
+    if (ctx->tsfn) {
+        ctx->tsfn.Release();
     }
 }
 
 // === Wrappers for JS ===
-void StartLoopbackCapture(const Nan::FunctionCallbackInfo<v8::Value>& info) {
+void StartLoopbackCapture(const Napi::CallbackInfo& info) {
     StartCapture(&g_loopbackCtx, info, true);
 }
-void StopLoopbackCapture(const Nan::FunctionCallbackInfo<v8::Value>& info) {
+
+void StopLoopbackCapture(const Napi::CallbackInfo& info) {
     StopCapture(&g_loopbackCtx);
 }
-void StartMicCapture(const Nan::FunctionCallbackInfo<v8::Value>& info) {
+
+void StartMicCapture(const Napi::CallbackInfo& info) {
     StartCapture(&g_micCtx, info, false);
 }
-void StopMicCapture(const Nan::FunctionCallbackInfo<v8::Value>& info) {
+
+void StopMicCapture(const Napi::CallbackInfo& info) {
     StopCapture(&g_micCtx);
 }
 
@@ -236,12 +208,12 @@ void DoCapture(CaptureContext* ctx, int deviceIndex) {
                     buffer.push_back(FloatToInt16(fData[i]));
             }
 
-            AudioData ad{ std::move(buffer), channels, sampleRate };
-            {
-                std::lock_guard<std::mutex> lock(ctx->queueMutex);
-                ctx->audioQueue.push(std::move(ad));
+            AudioData* ad = new AudioData{ std::move(buffer), channels, sampleRate };
+            
+            auto status = ctx->tsfn.BlockingCall(ad, CallbackWrapper);
+            if (status != napi_ok) {
+                delete ad;
             }
-            uv_async_send(&ctx->asyncHandle);
 
             captureClient->ReleaseBuffer(frames);
             captureClient->GetNextPacketSize(&packetFrames);
@@ -258,17 +230,15 @@ void DoCapture(CaptureContext* ctx, int deviceIndex) {
 }
 
 // === Init ===
-NAN_MODULE_INIT(Init) {
+Napi::Object Init(Napi::Env env, Napi::Object exports) {
     std::cout << "✅ Init called, exporting functions..." << std::endl;
 
-    Nan::Set(target, Nan::New("startLoopbackCapture").ToLocalChecked(),
-        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(StartLoopbackCapture)).ToLocalChecked());
-    Nan::Set(target, Nan::New("stopLoopbackCapture").ToLocalChecked(),
-        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(StopLoopbackCapture)).ToLocalChecked());
-    Nan::Set(target, Nan::New("startMicCapture").ToLocalChecked(),
-        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(StartMicCapture)).ToLocalChecked());
-    Nan::Set(target, Nan::New("stopMicCapture").ToLocalChecked(),
-        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(StopMicCapture)).ToLocalChecked());
+    exports.Set("startLoopbackCapture", Napi::Function::New(env, StartLoopbackCapture));
+    exports.Set("stopLoopbackCapture", Napi::Function::New(env, StopLoopbackCapture));
+    exports.Set("startMicCapture", Napi::Function::New(env, StartMicCapture));
+    exports.Set("stopMicCapture", Napi::Function::New(env, StopMicCapture));
+
+    return exports;
 }
 
-NODE_MODULE(wasapi_capture, Init);
+NODE_API_MODULE(wasapi_capture, Init)

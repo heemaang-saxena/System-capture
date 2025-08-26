@@ -4,31 +4,25 @@
     <Filter Include="..">
       <UniqueIdentifier>{739DB09A-CC57-A953-A6CF-F64FA08E4FA7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="C:">
-      <UniqueIdentifier>{7B735499-E5DD-1C2B-6C26-70023832A1CF}</UniqueIdentifier>
+    <Filter Include="E:">
+      <UniqueIdentifier>{5B7DBE12-B2C6-AFA4-ACF8-17495B3FA076}</UniqueIdentifier>
     </Filter>
-    <Filter Include="C:\Users">
-      <UniqueIdentifier>{E9F714C1-DA89-54E2-60CF-39FEB20BF756}</UniqueIdentifier>
+    <Filter Include="E:\EChoo">
+      <UniqueIdentifier>{E0964D43-2C82-C247-A50A-630F83ED3B3F}</UniqueIdentifier>
     </Filter>
-    <Filter Include="C:\Users\HP">
-      <UniqueIdentifier>{68BCE466-0550-42D8-F79D-21FBE8C73170}</UniqueIdentifier>
+    <Filter Include="E:\EChoo\testingEcho">
+      <UniqueIdentifier>{C131CE39-0913-15FF-6953-EFC068063712}</UniqueIdentifier>
     </Filter>
-    <Filter Include="C:\Users\HP\AppData">
-      <UniqueIdentifier>{F852EB63-437C-846A-220F-8D9ED6DAEC1D}</UniqueIdentifier>
+    <Filter Include="E:\EChoo\testingEcho\systemCapture">
+      <UniqueIdentifier>{EACBBB8D-E6B9-17C2-A628-BF99C18552F9}</UniqueIdentifier>
     </Filter>
-    <Filter Include="C:\Users\HP\AppData\Roaming">
-      <UniqueIdentifier>{D51E5808-912B-5C70-4BB7-475D1DBFA067}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="C:\Users\HP\AppData\Roaming\npm">
-      <UniqueIdentifier>{741E0E76-39B2-B1AB-9FA1-F1A20B16F295}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="C:\Users\HP\AppData\Roaming\npm\node_modules">
+    <Filter Include="E:\EChoo\testingEcho\systemCapture\node_modules">
       <UniqueIdentifier>{56DF7A98-063D-FB9D-485C-089023B4C16A}</UniqueIdentifier>
     </Filter>
-    <Filter Include="C:\Users\HP\AppData\Roaming\npm\node_modules\node-gyp">
+    <Filter Include="E:\EChoo\testingEcho\systemCapture\node_modules\node-gyp">
       <UniqueIdentifier>{77348C0E-2034-7791-74D5-63C077DF5A3B}</UniqueIdentifier>
     </Filter>
-    <Filter Include="C:\Users\HP\AppData\Roaming\npm\node_modules\node-gyp\src">
+    <Filter Include="E:\EChoo\testingEcho\systemCapture\node_modules\node-gyp\src">
       <UniqueIdentifier>{8CDEE807-BC53-E450-C8B8-4DEBB66742D4}</UniqueIdentifier>
     </Filter>
     <Filter Include="..">
@@ -39,8 +33,8 @@
     <ClCompile Include="..\wasapi_capture.cpp">
       <Filter>..</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\HP\AppData\Roaming\npm\node_modules\node-gyp\src\win_delay_load_hook.cc">
-      <Filter>C:\Users\HP\AppData\Roaming\npm\node_modules\node-gyp\src</Filter>
+    <ClCompile Include="E:\EChoo\testingEcho\systemCapture\node_modules\node-gyp\src\win_delay_load_hook.cc">
+      <Filter>E:\EChoo\testingEcho\systemCapture\node_modules\node-gyp\src</Filter>
     </ClCompile>
     <None Include="..\binding.gyp">
       <Filter>..</Filter>
