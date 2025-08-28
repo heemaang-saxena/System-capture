@@ -2,7 +2,8 @@
   "name": "system-capture",
   "version": "1.0.0",
   "description": "System audio capture native addon",
-  "main": "index.js",
+  "main": "electron-main.js",
+  "bin": "audio-streamer.js",
   "dependencies": {
     "bindings": "^1.5.0",
     "ffmpeg": "^0.0.4",
@@ -10,16 +11,58 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
-    "node-gyp": "^10.0.1"
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
+    "node-gyp": "^10.0.1",
+    "pkg": "^5.8.1"
   },
   "scripts": {
     "install": "node-gyp rebuild",
     "rebuild": "node-gyp rebuild",
     "clean": "node-gyp clean",
     "configure": "node-gyp configure",
-    "build": "node-gyp build"
+    "build": "node-gyp build",
+    "build-exe": "pkg . --target node18-win-x64 --output audio-streamer.exe",
+    "start": "node realtime_ws_stream_auto.js",
+    "test": "node test_mic_loopback.js",
+    "electron": "electron .",
+    "electron-dev": "electron . --dev",
+    "build-electron": "electron-builder",
+    "dist": "electron-builder --win"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "pkg": {
+    "assets": [
+      "build/Release/wasapi_capture.node"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ]
+  },
+  "build": {
+    "appId": "com.audio.streamer",
+    "productName": "Audio Streamer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron-main.js",
+      "electron-renderer.js",
+      "index.js",
+      "build/Release/wasapi_capture.node",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }
