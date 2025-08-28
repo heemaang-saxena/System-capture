@@ -263,11 +263,17 @@ function startLoopbackCapture(callback, deviceIndex = -1) {
   try {
     addon.startLoopbackCapture((buffer, channels, sampleRate) => {
       try {
-        const samples = new Int16Array(
-          buffer.buffer,
-          buffer.byteOffset,
-          buffer.length / 2
-        );
+        if (!buffer || buffer.length === 0) {
+          return;
+        }
+        let samples;
+        if (Buffer.isBuffer(buffer)) {
+          samples = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
+        } else if (buffer instanceof Int16Array) {
+          samples = buffer;
+        } else {
+          return;
+        }
         callback(samples, channels, sampleRate);
       } catch (err) {
         console.error("⚠️ Error in loopback callback:", err);
@@ -298,11 +304,17 @@ function startMicCapture(callback, deviceIndex = -1) {
   try {
     addon.startMicCapture((buffer, channels, sampleRate) => {
       try {
-        const samples = new Int16Array(
-          buffer.buffer,
-          buffer.byteOffset,
-          buffer.length / 2
-        );
+        if (!buffer || buffer.length === 0) {
+          return;
+        }
+        let samples;
+        if (Buffer.isBuffer(buffer)) {
+          samples = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
+        } else if (buffer instanceof Int16Array) {
+          samples = buffer;
+        } else {
+          return;
+        }
         callback(samples, channels, sampleRate);
       } catch (err) {
         console.error("⚠️ Error in mic callback:", err);
