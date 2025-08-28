@@ -167,32 +167,49 @@ void DoCapture(CaptureContext *ctx, int deviceIndex)
     WAVEFORMATEX *deviceFormat = nullptr;
     audioClient->GetMixFormat(&deviceFormat);
 
+    // Try multiple sample rates in order of preference
+    int sampleRates[] = {48000, 44100, 16000, 8000};
+    int channels = deviceFormat->nChannels;
+    int sampleRate = 48000; // default
+    bool initialized = false;
     WAVEFORMATEX waveFormat = {};
-    waveFormat.wFormatTag = WAVE_FORMAT_PCM;
-    waveFormat.nChannels = deviceFormat->nChannels;
-    waveFormat.nSamplesPerSec = 48000; // Force 48kHz for both mic and system
-    waveFormat.wBitsPerSample = 16;
-    waveFormat.nBlockAlign = waveFormat.nChannels * waveFormat.wBitsPerSample / 8;
-    waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
-    waveFormat.cbSize = 0;
+    HANDLE hEvent = nullptr;
+    
+    for (int rate : sampleRates) {
+        waveFormat.wFormatTag = WAVE_FORMAT_PCM;
+        waveFormat.nChannels = channels;
+        waveFormat.nSamplesPerSec = rate;
+        waveFormat.wBitsPerSample = 16;
+        waveFormat.nBlockAlign = waveFormat.nChannels * waveFormat.wBitsPerSample / 8;
+        waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+        waveFormat.cbSize = 0;
 
-    int sampleRate = waveFormat.nSamplesPerSec;
-    int channels = waveFormat.nChannels;
+        REFERENCE_TIME hnsRequested = 5000000; // 0.5s buffer
+        hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-    REFERENCE_TIME hnsRequested = 5000000; // 0.5s buffer
-    HANDLE hEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-    DWORD flags = ctx->loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0;
-    hr = audioClient->Initialize(
-        AUDCLNT_SHAREMODE_SHARED,
-        flags | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-        hnsRequested,
-        0,
-        &waveFormat,
-        nullptr);
-    if (FAILED(hr))
-    {
-        std::cerr << "Initialize failed (hr=" << std::hex << hr << ")\n";
+        DWORD flags = ctx->loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0;
+        hr = audioClient->Initialize(
+            AUDCLNT_SHAREMODE_SHARED,
+            flags | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+            hnsRequested,
+            0,
+            &waveFormat,
+            nullptr);
+            
+        if (SUCCEEDED(hr)) {
+            sampleRate = rate;
+            initialized = true;
+            std::cout << "✅ Audio initialized with " << rate << "Hz, " << channels << "ch" << std::endl;
+            break;
+        } else {
+            std::cout << "⚠️ Failed to initialize with " << rate << "Hz (hr=" << std::hex << hr << ")" << std::endl;
+            CloseHandle(hEvent);
+            hEvent = nullptr;
+        }
+    }
+    
+    if (!initialized) {
+        std::cerr << "❌ Failed to initialize audio with any supported format" << std::endl;
         device->Release();
         CoTaskMemFree(deviceFormat);
         return;

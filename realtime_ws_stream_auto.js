@@ -44,104 +44,147 @@ function downsampleBuffer(buffer, inChannels, inRate, outChannels = 1, outRate =
     return Buffer.from(samples.buffer);
 }
 
-function streamRealtime(source, label) {
-    const ws = new WebSocket(buildWsUrl());
-    ws.on('open', () => {
-        console.log(`[${label}] WebSocket connected, waiting for confirmation...`);
-    });
-    let wsConfirmed = false;
-    ws.on('message', (data) => {
-        if (!wsConfirmed) {
-            try {
-                const msg = JSON.parse(data);
-                if (msg.status === 'connected') {
-                    wsConfirmed = true;
-                    console.log(`[${label}] Server confirmed connection.`);
-                }
-            } catch (e) { }
-        }
-    });
-    let stopped = false;
-    let chunkCount = 0;
-    function sendChunk(chunk, ch, rate) {
-        // Downsample to mono 16kHz 16bit
-        const buf = downsampleBuffer(chunk, ch, rate, 1, 16000);
-        ws.send(buf);
-        chunkCount++;
-        console.log(`[${label}] Sent chunk #${chunkCount} (${buf.length} bytes)`);
-    }
-    source((samples, ch, rate) => {
-        if (!stopped && wsConfirmed) {
-            sendChunk(Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength), ch, rate);
-        }
-    });
-    setTimeout(() => {
-        stopped = true;
-        if (label === 'Mic') stopMicCapture();
-        if (label === 'System') stopLoopbackCapture();
-        ws.send(JSON.stringify({ status: 'disconnect' }));
-        ws.close();
-        console.log(`[${label}] Stopped and disconnected.`);
-    }, 3000000); // 30s
-    ws.on('close', () => {
-        process.exit(0);
-    });
-    ws.on('error', (err) => {
-        console.error(`[${label}] WebSocket error:`, err);
-        process.exit(1);
-    });
-}
-
 // Stream both mic and system audio in parallel to the same websocket
+console.log('🎤 Starting real-time audio streaming...');
+console.log('📡 Connecting to WebSocket server...');
+
 const ws = new WebSocket(buildWsUrl());
 let wsConfirmed = false;
+let micStarted = false;
+let systemStarted = false;
+
 ws.on('open', () => {
-    console.log('[Call] WebSocket connected, waiting for confirmation...');
+    console.log('✅ WebSocket connected, waiting for server confirmation...');
 });
+
 ws.on('message', (data) => {
     if (!wsConfirmed) {
         try {
             const msg = JSON.parse(data);
             if (msg.status === 'connected') {
                 wsConfirmed = true;
-                console.log('[Call] Server confirmed connection. Streaming mic and system audio...');
+                console.log('✅ Server confirmed connection. Starting audio captures...');
+                
+                // Start audio captures after WebSocket confirmation
+                startAudioCaptures();
             }
-        } catch (e) { }
+        } catch (e) {
+            console.log('📨 Received message:', data.toString());
+        }
     }
 });
+
+function startAudioCaptures() {
+    console.log('🎙️ Starting microphone capture...');
+    try {
+        startMicCapture((samples, ch, rate) => {
+            if (!micStarted) {
+                console.log(`🎤 Microphone started: ${ch}ch, ${rate}Hz`);
+                micStarted = true;
+            }
+            if (wsConfirmed && !stopped) {
+                sendChunk('mic', Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength), ch, rate);
+            }
+        }, -1); // Use default microphone
+        console.log('✅ Microphone capture initiated');
+    } catch (err) {
+        console.error('❌ Failed to start microphone capture:', err);
+    }
+
+    console.log('🎧 Starting system audio capture...');
+    try {
+        startLoopbackCapture((samples, ch, rate) => {
+            if (!systemStarted) {
+                console.log(`🔊 System audio started: ${ch}ch, ${rate}Hz`);
+                systemStarted = true;
+            }
+            if (wsConfirmed && !stopped) {
+                sendChunk('system', Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength), ch, rate);
+            }
+        }, -1); // Use default system audio
+        console.log('✅ System audio capture initiated');
+    } catch (err) {
+        console.error('❌ Failed to start system audio capture:', err);
+    }
+}
+
 let stopped = false;
 let micChunkCount = 0;
 let sysChunkCount = 0;
+
 function sendChunk(source, chunk, ch, rate) {
-    // Downsample to mono 16kHz 16bit
-    const buf = downsampleBuffer(chunk, ch, rate, 1, 16000);
-    // Tag the source
-    ws.send(JSON.stringify({ source, data: buf.toString('base64') }));
-    // Removed logging for sent chunks
+    try {
+        // Downsample to mono 16kHz 16bit
+        const buf = downsampleBuffer(chunk, ch, rate, 1, 16000);
+        
+        // Send as binary data (more efficient than base64)
+        ws.send(buf);
+        
+        if (source === 'mic') {
+            micChunkCount++;
+            if (micChunkCount % 10 === 0) { // Log every 10th chunk
+                console.log(`🎤 Mic chunk #${micChunkCount} (${buf.length} bytes)`);
+            }
+        } else if (source === 'system') {
+            sysChunkCount++;
+            if (sysChunkCount % 10 === 0) { // Log every 10th chunk
+                console.log(`🔊 System chunk #${sysChunkCount} (${buf.length} bytes)`);
+            }
+        }
+    } catch (err) {
+        console.error(`❌ Error sending ${source} chunk:`, err);
+    }
 }
-startMicCapture((samples, ch, rate) => {
-    if (!stopped && wsConfirmed) {
-        sendChunk('mic', Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength), ch, rate);
-    }
-});
-startLoopbackCapture((samples, ch, rate) => {
-    if (!stopped && wsConfirmed) {
-        sendChunk('system', Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength), ch, rate);
-    }
-});
-// Only one timeout should control the session. Set to 30 minutes (1800000 ms) for long calls.
+
+// Session timeout - 30 minutes
 setTimeout(() => {
+    console.log('⏰ Session timeout reached. Stopping captures...');
+    stopped = true;
+    
+    try {
+        stopMicCapture();
+        console.log('🛑 Microphone capture stopped');
+    } catch (err) {
+        console.error('❌ Error stopping microphone:', err);
+    }
+    
+    try {
+        stopLoopbackCapture();
+        console.log('🛑 System audio capture stopped');
+    } catch (err) {
+        console.error('❌ Error stopping system audio:', err);
+    }
+    
+    ws.send(JSON.stringify({ status: 'disconnect' }));
+    ws.close();
+    console.log('🔌 WebSocket disconnected');
+}, 1800000); // 30 minutes
+
+ws.on('close', () => {
+    console.log('🔌 WebSocket connection closed');
+    process.exit(0);
+});
+
+ws.on('error', (err) => {
+    console.error('❌ WebSocket error:', err);
+    process.exit(1);
+});
+
+// Handle process termination
+process.on('SIGINT', () => {
+    console.log('\n🛑 Received SIGINT. Cleaning up...');
     stopped = true;
     stopMicCapture();
     stopLoopbackCapture();
-    ws.send(JSON.stringify({ status: 'disconnect' }));
     ws.close();
-    console.log('[Call] Stopped and disconnected.');
-}, 1800000); // 30 minutes
-ws.on('close', () => {
     process.exit(0);
 });
-ws.on('error', (err) => {
-    console.error('[Call] WebSocket error:', err);
-    process.exit(1);
+
+process.on('SIGTERM', () => {
+    console.log('\n🛑 Received SIGTERM. Cleaning up...');
+    stopped = true;
+    stopMicCapture();
+    stopLoopbackCapture();
+    ws.close();
+    process.exit(0);
 });
